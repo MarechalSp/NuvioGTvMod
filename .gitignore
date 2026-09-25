@@ -1,13 +1,17 @@
 *.iml
-.gradle
+.gradle/
+.idea/
 /local.properties
 /local.dev.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
+local.properties
+local.dev.properties
+*.apk
+*.aab
+apks/
+*.log
+*.jks
+*.keystore
+nuviotv.jks
 .DS_Store
 __pycache__/
 *.py[cod]
@@ -18,10 +22,6 @@ __pycache__/
 /captures
 .externalNativeBuild
 .cxx
-local.properties
-libass-android
-Stremio addons refer
-nuviotv.jks
 CLAUDE.md
 build_and_install.sh
 android-tv-samples

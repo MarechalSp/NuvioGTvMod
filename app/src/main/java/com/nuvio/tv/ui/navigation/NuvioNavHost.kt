@@ -38,6 +38,8 @@ import com.nuvio.tv.ui.screens.player.PostPlayRecommendation
 import com.nuvio.tv.ui.screens.plugin.PluginScreen
 import com.nuvio.tv.ui.screens.search.DiscoverScreen
 import com.nuvio.tv.ui.screens.search.SearchScreen
+import com.nuvio.tv.domain.model.playableTvUrl
+import com.nuvio.tv.ui.screens.tvchannels.TvChannelsScreen
 import com.nuvio.tv.ui.screens.settings.AboutScreen
 import com.nuvio.tv.ui.screens.settings.LayoutSettingsScreen
 import com.nuvio.tv.ui.screens.settings.LicensesAttributionsScreen
@@ -1157,6 +1159,32 @@ private fun PlaybackNavHost(
                             heroBackdropUrl = heroBackdrop
                         )
                     )
+                }
+            )
+        }
+
+        composable(Screen.TvChannels.route) {
+            TvChannelsScreen(
+                onWatchFullscreenInMainPlayer = { channel, stream ->
+                    val streamUrl = stream.playableTvUrl
+                    if (!streamUrl.isNullOrBlank()) {
+                        navController.navigate(
+                            Screen.Player.createRoute(
+                                streamUrl = streamUrl,
+                                title = channel.name,
+                                streamName = stream.getDisplayNameOrNull() ?: channel.name,
+                                headers = stream.behaviorHints?.proxyHeaders?.request,
+                                contentType = "channel",
+                                contentName = channel.name,
+                                videoId = channel.id,
+                                poster = channel.poster,
+                                logo = channel.logo,
+                                addonName = channel.addonName,
+                                addonLogo = channel.addonLogo,
+                                returnToHomeOnBack = false
+                            )
+                        )
+                    }
                 }
             )
         }

@@ -36,6 +36,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Explore
@@ -105,6 +106,7 @@ internal enum class SettingsCategory {
     APPEARANCE,
     LAYOUT,
     CONTENT_DISCOVERY,
+    TV_CHANNELS,
     INTEGRATION,
     PLAYBACK,
     ADVANCED,
@@ -205,6 +207,13 @@ private fun rememberSettingsSectionSpecs() = listOf(
         title = stringResource(R.string.settings_content_discovery),
         icon = Icons.Default.Explore,
         subtitle = stringResource(R.string.settings_content_discovery_subtitle),
+        destination = SettingsSectionDestination.Inline
+    ),
+    SettingsSectionSpec(
+        category = SettingsCategory.TV_CHANNELS,
+        title = stringResource(R.string.settings_tv_channels),
+        icon = Icons.Rounded.Tv,
+        subtitle = stringResource(R.string.settings_tv_channels_subtitle),
         destination = SettingsSectionDestination.Inline
     ),
     SettingsSectionSpec(
@@ -318,6 +327,7 @@ fun SettingsScreen(
             SettingsCategory.PROFILES to FocusRequester(),
             SettingsCategory.LAYOUT to FocusRequester(),
             SettingsCategory.CONTENT_DISCOVERY to FocusRequester(),
+            SettingsCategory.TV_CHANNELS to FocusRequester(),
             SettingsCategory.INTEGRATION to FocusRequester(),
             SettingsCategory.PLAYBACK to FocusRequester(),
             SettingsCategory.ADVANCED to FocusRequester(),
@@ -1024,6 +1034,13 @@ private fun SettingsDetailPane(
             showPlugins = AppFeaturePolicy.pluginsEnabled && !isEssentialMode,
             initialFocusRequester = if (allowDetailAutofocus) {
                 contentFocusRequesters[SettingsCategory.CONTENT_DISCOVERY]
+            } else {
+                null
+            }
+        )
+        SettingsCategory.TV_CHANNELS -> TvChannelsSettingsPane(
+            initialFocusRequester = if (allowDetailAutofocus) {
+                contentFocusRequesters[SettingsCategory.TV_CHANNELS]
             } else {
                 null
             }

@@ -26,4 +26,12 @@ dependencyResolutionManagement {
 rootProject.name = "My Application"
 include(":app")
 include(":baselineprofile")
-include(":ffmpeg-decoder-downmix")
+
+val localProperties = java.util.Properties().apply {
+    val file = file("local.properties")
+    if (file.exists()) load(file.inputStream())
+}
+val useLocalFfmpegDecoder = localProperties.getProperty("USE_LOCAL_FFMPEG_DECODER")?.equals("true", ignoreCase = true) ?: false
+if (useLocalFfmpegDecoder) {
+    include(":ffmpeg-decoder-downmix")
+}
