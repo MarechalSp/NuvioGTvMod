@@ -42,6 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -82,6 +84,8 @@ fun TvChannelPreviewPanel(
     onToggleFavorite: () -> Unit,
     onOpenSchedule: () -> Unit,
     onStreamSelected: (Int) -> Unit,
+    onRequestChannelListFocus: (() -> Unit)? = null,
+    panelFocusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier
 ) {
     val activeStream = streams.getOrNull(selectedStreamIndex)
@@ -164,7 +168,18 @@ fun TvChannelPreviewPanel(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .clickable(onClick = onStartPlayback),
+                        .clickable(onClick = onStartPlayback)
+                        .onPreviewKeyEvent { keyEvent ->
+                            if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                                keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                            ) {
+                                if (onRequestChannelListFocus != null) {
+                                    onRequestChannelListFocus()
+                                    return@onPreviewKeyEvent true
+                                }
+                            }
+                            false
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     val backdropUrl = channel.poster ?: channel.logo
@@ -334,9 +349,20 @@ fun TvChannelPreviewPanel(
                         focusedContainerColor = Color.White,
                         focusedContentColor = Color.Black
                     ),
-                    modifier = Modifier
+                    modifier = (if (panelFocusRequester != null) Modifier.focusRequester(panelFocusRequester) else Modifier)
                         .weight(1.2f)
                         .onFocusChanged { isFullscreenFocused = it.isFocused }
+                        .onPreviewKeyEvent { keyEvent ->
+                            if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                                keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                            ) {
+                                if (onRequestChannelListFocus != null) {
+                                    onRequestChannelListFocus()
+                                    return@onPreviewKeyEvent true
+                                }
+                            }
+                            false
+                        }
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -455,7 +481,19 @@ fun TvChannelPreviewPanel(
                         var isChipFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = { onStreamSelected(idx) },
-                            modifier = Modifier.onFocusChanged { isChipFocused = it.isFocused },
+                            modifier = Modifier
+                                .onFocusChanged { isChipFocused = it.isFocused }
+                                .onPreviewKeyEvent { keyEvent ->
+                                    if (idx == 0 && keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                                        keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT
+                                    ) {
+                                        if (onRequestChannelListFocus != null) {
+                                            onRequestChannelListFocus()
+                                            return@onPreviewKeyEvent true
+                                        }
+                                    }
+                                    false
+                                },
                             shape = ButtonDefaults.shape(shape = RoundedCornerShape(6.dp)),
                             colors = ButtonDefaults.colors(
                                 containerColor = if (isSel) NuvioTheme.colors.Secondary.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.08f),
@@ -494,6 +532,12 @@ fun TvChannelPreviewPanel(
                         .onPreviewKeyEvent { keyEvent ->
                             if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
                                 when (keyEvent.nativeKeyEvent.keyCode) {
+                                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                        if (onRequestChannelListFocus != null) {
+                                            onRequestChannelListFocus()
+                                            return@onPreviewKeyEvent true
+                                        }
+                                    }
                                     KeyEvent.KEYCODE_DPAD_DOWN -> {
                                         if (scrollState.canScrollForward) {
                                             coroutineScope.launch {

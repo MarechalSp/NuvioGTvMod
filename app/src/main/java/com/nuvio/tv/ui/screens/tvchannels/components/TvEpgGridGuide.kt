@@ -2,6 +2,7 @@
 
 package com.nuvio.tv.ui.screens.tvchannels.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -94,6 +95,11 @@ fun TvEpgGridGuide(
     onBackToList: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Intercepta botão Voltar do controle para retornar à lista de canais
+    BackHandler {
+        onBackToList()
+    }
+
     var currentTimeMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     // Atualiza o relógio a cada 30 segundos

@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalTvMaterial3Api::class)
+@file:OptIn(ExperimentalTvMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 
 package com.nuvio.tv.ui.screens.tvchannels
 
@@ -67,17 +67,21 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -143,8 +147,16 @@ fun TvChannelsScreen(
     val voiceButtonFocusRequester = remember { FocusRequester() }
     val searchInputFocusRequester = remember { FocusRequester() }
     val activeSearchInputFocusRequester = remember { FocusRequester() }
-    val firstCategoryFocusRequester = remember { FocusRequester() }
     val clearSearchFocusRequester = remember { FocusRequester() }
+    val categoriesContainerFocusRequester = remember { FocusRequester() }
+    val channelListContainerFocusRequester = remember { FocusRequester() }
+    val channelFocusRequesters = remember { mutableMapOf<Int, FocusRequester>() }
+    val previewPanelFocusRequester = remember { FocusRequester() }
+
+    val categoryListState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    var lastFocusedCategoryIndex by rememberSaveable { mutableIntStateOf(0) }
+    var lastFocusedChannelIndex by rememberSaveable { mutableIntStateOf(0) }
 
     // Estado da Busca por Digitação: só ativa modo de digitação/teclado ao clicar em cima
     var isEditingSearch by rememberSaveable { mutableStateOf(false) }
@@ -156,6 +168,18 @@ fun TvChannelsScreen(
         keyboardController?.hide()
         isEditingSearch = false
         runCatching { searchInputFocusRequester.requestFocus() }
+    }
+
+    // Intercepta botão Voltar do controle na Grade EPG para voltar à tela de canais
+    BackHandler(enabled = isEpgGridMode) {
+        isEpgGridMode = false
+        coroutineScope.launch {
+            kotlinx.coroutines.yield()
+            val focused = runCatching { gradeEpgFocusRequester.requestFocus() }.isSuccess
+            if (!focused) {
+                runCatching { channelListContainerFocusRequester.requestFocus() }
+            }
+        }
     }
 
     LaunchedEffect(isEditingSearch) {
@@ -347,9 +371,59 @@ fun TvChannelsScreen(
             },
             onBackToList = {
                 isEpgGridMode = false
+                coroutineScope.launch {
+                    kotlinx.coroutines.yield()
+                    val focused = runCatching { gradeEpgFocusRequester.requestFocus() }.isSuccess
+                    if (!focused) {
+                        runCatching { channelListContainerFocusRequester.requestFocus() }
+                    }
+                }
             }
         )
         return
+    }
+
+    val allLabel = stringResource(R.string.tv_channels_category_all)
+    val favoritesLabel = stringResource(R.string.tv_channels_favorites)
+    val categories = remember(allLabel, favoritesLabel, state.favoriteKeys.size, state.categories) {
+        listOf(allLabel) +
+            (if (state.favoriteKeys.isNotEmpty()) listOf(favoritesLabel) else emptyList()) +
+            state.categories
+    }
+
+    val selectedCategoryIndex = remember(categories, state.selectedCategory) {
+        val idx = categories.indexOfFirst { cat ->
+            val isAll = cat == allLabel || cat.equals("todos", ignoreCase = true) || cat.equals("all", ignoreCase = true)
+            val isFavCat = cat == favoritesLabel || cat.equals("favoritos", ignoreCase = true) || cat.equals("favorites", ignoreCase = true) || cat.equals(favoritesLabel, ignoreCase = true)
+            when {
+                isAll -> state.selectedCategory.isBlank()
+                isFavCat -> state.selectedCategory.equals("favoritos", ignoreCase = true) || state.selectedCategory.equals("favorites", ignoreCase = true) || state.selectedCategory.equals(favoritesLabel, ignoreCase = true)
+                else -> state.selectedCategory.equals(cat, ignoreCase = true)
+            }
+        }
+        if (idx >= 0) idx else 0
+    }
+
+    val categoryFocusRequesters = remember(categories.size) {
+        List(categories.size) { FocusRequester() }
+    }
+
+    val focusCategory: (Int) -> Unit = remember(categoriesContainerFocusRequester) {
+        { _ ->
+            runCatching { categoriesContainerFocusRequester.requestFocus() }
+        }
+    }
+
+    val focusChannelList: () -> Unit = remember(channelListContainerFocusRequester) {
+        {
+            runCatching { channelListContainerFocusRequester.requestFocus() }
+        }
+    }
+
+    LaunchedEffect(state.selectedCategory) {
+        lastFocusedChannelIndex = 0
+        channelFocusRequesters.clear()
+        runCatching { listState.scrollToItem(0) }
     }
 
     // 3. Tela Principal Split-Screen (Lista à esquerda, Preview à direita)
@@ -413,6 +487,15 @@ fun TvChannelsScreen(
                             .focusRequester(gradeEpgFocusRequester)
                             .focusProperties {
                                 down = searchInputFocusRequester
+                            }
+                            .onPreviewKeyEvent { keyEvent ->
+                                if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                                    keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                                ) {
+                                    runCatching { searchInputFocusRequester.requestFocus() }
+                                    return@onPreviewKeyEvent true
+                                }
+                                false
                             },
                         shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
                         colors = ButtonDefaults.colors(
@@ -445,6 +528,15 @@ fun TvChannelsScreen(
                             .focusRequester(addonsFocusRequester)
                             .focusProperties {
                                 down = searchInputFocusRequester
+                            }
+                            .onPreviewKeyEvent { keyEvent ->
+                                if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                                    keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                                ) {
+                                    runCatching { searchInputFocusRequester.requestFocus() }
+                                    return@onPreviewKeyEvent true
+                                }
+                                false
                             },
                         shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
                         colors = ButtonDefaults.colors(
@@ -477,6 +569,15 @@ fun TvChannelsScreen(
                             .focusRequester(refreshFocusRequester)
                             .focusProperties {
                                 down = searchInputFocusRequester
+                            }
+                            .onPreviewKeyEvent { keyEvent ->
+                                if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                                    keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                                ) {
+                                    runCatching { searchInputFocusRequester.requestFocus() }
+                                    return@onPreviewKeyEvent true
+                                }
+                                false
                             },
                         shape = ButtonDefaults.shape(shape = RoundedCornerShape(8.dp)),
                         colors = ButtonDefaults.colors(
@@ -498,9 +599,7 @@ fun TvChannelsScreen(
 
             // Linha 2: Barra de Pesquisa Padrão do App (Botão de Voz Separado do Campo de Digitação)
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusGroup(),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Botão de Busca por Voz (Separado, padrão SearchScreen)
@@ -561,7 +660,7 @@ fun TvChannelsScreen(
                             .focusProperties {
                                 up = gradeEpgFocusRequester
                                 right = searchInputFocusRequester
-                                down = firstCategoryFocusRequester
+                                down = categoriesContainerFocusRequester
                             }
                             .onFocusChanged { isVoiceButtonFocused = it.isFocused }
                             .size(46.dp)
@@ -602,7 +701,7 @@ fun TvChannelsScreen(
                                 up = gradeEpgFocusRequester
                                 left = voiceButtonFocusRequester
                                 right = if (searchQuery.isNotEmpty()) clearSearchFocusRequester else FocusRequester.Default
-                                down = firstCategoryFocusRequester
+                                down = categoriesContainerFocusRequester
                             }
                             .onFocusChanged { isSearchBoxFocused = it.isFocused }
                             .onPreviewKeyEvent { keyEvent ->
@@ -613,24 +712,6 @@ fun TvChannelsScreen(
                                         KeyEvent.KEYCODE_NUMPAD_ENTER -> {
                                             isEditingSearch = true
                                             true
-                                        }
-                                        KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                            runCatching { firstCategoryFocusRequester.requestFocus() }
-                                            true
-                                        }
-                                        KeyEvent.KEYCODE_DPAD_UP -> {
-                                            runCatching { gradeEpgFocusRequester.requestFocus() }
-                                            true
-                                        }
-                                        KeyEvent.KEYCODE_DPAD_LEFT -> {
-                                            runCatching { voiceButtonFocusRequester.requestFocus() }
-                                            true
-                                        }
-                                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                                            if (searchQuery.isNotEmpty()) {
-                                                runCatching { clearSearchFocusRequester.requestFocus() }
-                                                true
-                                            } else false
                                         }
                                         else -> false
                                     }
@@ -704,7 +785,7 @@ fun TvChannelsScreen(
                                 up = gradeEpgFocusRequester
                                 left = voiceButtonFocusRequester
                                 right = if (searchQuery.isNotEmpty()) clearSearchFocusRequester else FocusRequester.Default
-                                down = firstCategoryFocusRequester
+                                down = categoriesContainerFocusRequester
                             }
                             .onFocusChanged { focusState ->
                                 if (focusState.isFocused) {
@@ -727,7 +808,7 @@ fun TvChannelsScreen(
                                         KeyEvent.KEYCODE_DPAD_DOWN -> {
                                             keyboardController?.hide()
                                             isEditingSearch = false
-                                            runCatching { firstCategoryFocusRequester.requestFocus() }
+                                            runCatching { categoriesContainerFocusRequester.requestFocus() }
                                             return@onPreviewKeyEvent true
                                         }
                                         KeyEvent.KEYCODE_DPAD_UP -> {
@@ -802,7 +883,7 @@ fun TvChannelsScreen(
                             .focusProperties {
                                 up = addonsFocusRequester
                                 left = if (isEditingSearch) activeSearchInputFocusRequester else searchInputFocusRequester
-                                down = firstCategoryFocusRequester
+                                down = categoriesContainerFocusRequester
                             }
                             .onFocusChanged { isClearButtonFocused = it.isFocused }
                             .size(46.dp)
@@ -829,21 +910,17 @@ fun TvChannelsScreen(
             Spacer(modifier = Modifier.height(10.dp))
 
             // Linha 3: Barra de Categorias / Gêneros (Horizontal, deslocada para a direita para não cortar a aba "Todos")
-            val allLabel = stringResource(R.string.tv_channels_category_all)
-            val favoritesLabel = stringResource(R.string.tv_channels_favorites)
-            val categories = listOf(allLabel) +
-                (if (state.favoriteKeys.isNotEmpty()) listOf(favoritesLabel) else emptyList()) +
-                state.categories
-
             LazyRow(
+                state = categoryListState,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 6.dp),
+                    .padding(start = 6.dp)
+                    .focusRequester(categoriesContainerFocusRequester)
+                    .focusRestorer(categoryFocusRequesters.getOrNull(selectedCategoryIndex) ?: FocusRequester.Default),
                 contentPadding = PaddingValues(start = 10.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 itemsIndexed(categories) { index, cat ->
-                    val isFirst = index == 0
                     val isAll = cat == allLabel || cat.equals("todos", ignoreCase = true) || cat.equals("all", ignoreCase = true)
                     val isFavCat = cat == favoritesLabel || cat.equals("favoritos", ignoreCase = true) || cat.equals("favorites", ignoreCase = true)
                     val isSelected = when {
@@ -864,19 +941,19 @@ fun TvChannelsScreen(
                             }
                             viewModel.selectCategory(target)
                         },
-                        modifier = (if (isFirst) Modifier.focusRequester(firstCategoryFocusRequester) else Modifier)
+                        modifier = Modifier
+                            .focusRequester(categoryFocusRequesters.getOrElse(index) { FocusRequester() })
                             .focusProperties {
                                 up = searchInputFocusRequester
-                            }
-                            .onFocusChanged { isCatFocused = it.isFocused }
-                            .onPreviewKeyEvent { keyEvent ->
-                                if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-                                    if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
-                                        runCatching { searchInputFocusRequester.requestFocus() }
-                                        return@onPreviewKeyEvent true
-                                    }
+                                if (state.filteredChannels.isNotEmpty()) {
+                                    down = channelListContainerFocusRequester
                                 }
-                                false
+                            }
+                            .onFocusChanged {
+                                isCatFocused = it.isFocused
+                                if (it.isFocused) {
+                                    lastFocusedCategoryIndex = index
+                                }
                             },
                         shape = ButtonDefaults.shape(shape = RoundedCornerShape(20.dp)),
                         colors = ButtonDefaults.colors(
@@ -1024,39 +1101,43 @@ fun TvChannelsScreen(
                         else -> {
                             LazyColumn(
                                 state = listState,
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .focusRequester(channelListContainerFocusRequester)
+                                    .focusRestorer(),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 itemsIndexed(
                                     items = state.filteredChannels,
                                     key = { _, channel -> channel.stableKey() }
                                 ) { channelIndex, channel ->
-                                    val isFirstItem = channelIndex == 0
                                     val isSelected = state.previewChannel?.stableKey() == channel.stableKey()
                                     val isPlaying = isSelected && state.isPreviewPlaybackActive && state.previewStreams.isNotEmpty()
+                                    val itemRequester = channelFocusRequesters.getOrPut(channelIndex) { FocusRequester() }
 
                                     TvChannelListItem(
                                         channel = channel,
                                         isSelected = isSelected,
                                         isPlaying = isPlaying,
-                                        modifier = if (isFirstItem) {
-                                            Modifier
-                                                .focusProperties {
-                                                    up = firstCategoryFocusRequester
+                                        modifier = Modifier
+                                            .focusRequester(itemRequester)
+                                            .focusProperties {
+                                                if (channelIndex == 0) {
+                                                    up = categoriesContainerFocusRequester
                                                 }
-                                                .onPreviewKeyEvent { keyEvent ->
-                                                    if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-                                                        if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
-                                                            runCatching { firstCategoryFocusRequester.requestFocus() }
-                                                            return@onPreviewKeyEvent true
-                                                        }
-                                                    }
-                                                    false
+                                                right = previewPanelFocusRequester
+                                            }
+                                            .onPreviewKeyEvent { keyEvent ->
+                                                if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
+                                                    keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                                                ) {
+                                                    runCatching { previewPanelFocusRequester.requestFocus() }
+                                                    return@onPreviewKeyEvent true
                                                 }
-                                        } else {
-                                            Modifier
-                                        },
+                                                false
+                                            },
                                         onFocused = {
+                                            lastFocusedChannelIndex = channelIndex
                                             viewModel.onChannelFocused(channel)
                                         },
                                         onClick = {
@@ -1081,6 +1162,8 @@ fun TvChannelsScreen(
                     errorMessage = state.previewErrorMessage,
                     playerPool = viewModel.playerPool,
                     isPreviewActive = state.isPreviewPlaybackActive,
+                    panelFocusRequester = previewPanelFocusRequester,
+                    onRequestChannelListFocus = focusChannelList,
                     onStartPlayback = {
                         state.previewChannel?.let { viewModel.startChannelPreviewPlayback(it) }
                     },
